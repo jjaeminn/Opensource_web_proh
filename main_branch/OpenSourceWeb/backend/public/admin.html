@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>관리자 페이지</title>
+  <style>
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+    .tab-btn.active { font-weight: bold; }
+    .msg.ok { color: green; }
+    .msg.err { color: red; }
+    .modal-bg { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); }
+    .modal-box { background: #fff; width: 400px; margin: 80px auto; padding: 20px; border: 1px solid #ccc; }
+    .form-row { margin-bottom: 8px; }
+    .form-row label { display: block; }
+    .form-row input, .form-row textarea { width: 100%; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+
+  <h2>관리자 페이지</h2>
+
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-user-btn" onclick="showTab('users')">유저 관리</button>
+    <button class="tab-btn" id="tab-activity-btn" onclick="showTab('activities')">모임 관리</button>
+  </div>
+
+  <p class="msg" id="msg"></p>
+
+
+  <div id="section-users">
+    <div class="search-bar">
+      <input type="text" id="user-keyword" placeholder="이름 또는 이메일로 검색">
+      <button onclick="loadUsers()">검색</button>
+      <button onclick="resetUserSearch()">초기화</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>이름</th>
+          <th>이메일</th>
+          <th>역할</th>
+          <th>가입일</th>
+          <th>작업</th>
+        </tr>
+      </thead>
+      <tbody id="user-tbody"></tbody>
+    </table>
+  </div>
+
+
+
+  <div id="section-activities" style="display:none">
+    <div class="search-bar">
+      <input type="text" id="activity-keyword" placeholder="제목, 카테고리, 장소로 검색">
+      <button onclick="loadActivities()">검색</button>
+      <button onclick="resetActivitySearch()">초기화</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>제목</th>
+          <th>카테고리</th>
+          <th>장소</th>
+          <th>날짜 / 시간</th>
+          <th>참가자</th>
+          <th>작업</th>
+        </tr>
+      </thead>
+      <tbody id="activity-tbody"></tbody>
+    </table>
+  </div>
+
+
+
+
+
+
+  <div class="modal-bg" id="edit-modal">
+    <div class="modal-box">
+      <h3>모임 수정</h3>
+      <input type="hidden" id="edit-id">
+      <div class="form-row">
+        <label>제목 *</label>
+        <input type="text" id="edit-title">
+      </div>
+      <div class="form-row">
+        <label>카테고리 *</label>
+        <input type="text" id="edit-category">
+      </div>
+      <div class="form-row">
+        <label>설명</label>
+        <textarea id="edit-description" rows="3"></textarea>
+      </div>
+      <div class="form-row">
+        <label>장소 *</label>
+        <input type="text" id="edit-location">
+      </div>
+      <div class="form-row">
+        <label>주소</label>
+        <input type="text" id="edit-address">
+      </div>
+      <div class="form-row">
+        <label>날짜 * (예: 2025-06-01)</label>
+        <input type="text" id="edit-date">
+      </div>
+      <div class="form-row">
+        <label>시간 * (예: 14:00)</label>
+        <input type="text" id="edit-time">
+      </div>
+      <div class="form-row">
+        <label>소요시간</label>
+        <input type="text" id="edit-duration">
+      </div>
+      <div class="form-row">
+        <label>최대 참가자 수 *</label>
+        <input type="number" id="edit-maxParticipants" min="1">
+      </div>
+      <div class="modal-btns">
+        <button onclick="saveActivity()">저장</button>
+        <button onclick="closeModal()">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var SERVER = 'http://localhost:5000';
+    var activityList = [];
+
+    function showMsg(txt, fail) {
+      var box = document.getElementById('msg');
+      box.textContent = txt;
+      box.className = 'msg ' + (fail ? 'err' : 'ok');
+    }
+
+    function showTab(tab) {
+      var onUsers = tab === 'users';
+      document.getElementById('section-users').style.display = onUsers ? '' : 'none';
+      document.getElementById('section-activities').style.display = onUsers ? 'none' : '';
+      document.getElementById('tab-user-btn').className = 'tab-btn' + (onUsers ? ' active' : '');
+      document.getElementById('tab-activity-btn').className = 'tab-btn' + (!onUsers ? ' active' : '');
+      if (onUsers) loadUsers();
+      else loadActivities();
+    }
+
+    // ── 유저 ──
+
+    function resetUserSearch() {
+      document.getElementById('user-keyword').value = '';
+      loadUsers();
+    }
+
+    function loadUsers() {
+      var word = document.getElementById('user-keyword').value;
+      var url = SERVER + '/admin/users';
+      if (word) url = url + '?keyword=' + word;
+
+      fetch(url).then(function(r) {
+        return r.json();
+      }).then(function(result) {
+        var tbl = document.getElementById('user-tbody');
+        tbl.innerHTML = '';
+
+        if (!result.success) { showMsg('유저 목록을 불러오지 못했어요', true); return; }
+        if (result.data.length === 0) {
+          tbl.innerHTML = '<tr><td colspan="5">결과 없음</td></tr>';
+          return;
+        }
+
+        for (var i = 0; i < result.data.length; i++) {
+          var u = result.data[i];
+
+          var d = new Date(u.createdAt);
+          var since = d.getFullYear() + '년 ' + (d.getMonth() + 1) + '월 ' + d.getDate() + '일';
+          var badge = u.role === 'admin' ? '[관리자]' : '[일반]';
+
+          var tr     = document.createElement('tr');
+          var tdName  = document.createElement('td');
+          var tdEmail = document.createElement('td');
+          var tdBadge = document.createElement('td');
+          var tdSince = document.createElement('td');
+          var tdAct   = document.createElement('td');
+
+          tdName.textContent  = u.name;
+          tdEmail.textContent = u.email;
+          tdBadge.textContent = badge;
+          tdSince.textContent = since;
+
+          if (u.role !== 'admin') {
+            var promoteBtn = document.createElement('button');
+            promoteBtn.textContent = '관리자 승격';
+            promoteBtn.setAttribute('onclick', 'promoteUser("' + u._id + '")');
+            tdAct.appendChild(promoteBtn);
+          } else {
+            var demoteBtn = document.createElement('button');
+            demoteBtn.textContent = '일반으로';
+            demoteBtn.setAttribute('onclick', 'demoteUser("' + u._id + '")');
+            tdAct.appendChild(demoteBtn);
+          }
+
+          var deleteBtn = document.createElement('button');
+          deleteBtn.textContent = '삭제';
+          deleteBtn.setAttribute('onclick', 'deleteUser("' + u._id + '", "' + u.name + '")');
+          tdAct.appendChild(deleteBtn);
+
+          tr.appendChild(tdName);
+          tr.appendChild(tdEmail);
+          tr.appendChild(tdBadge);
+          tr.appendChild(tdSince);
+          tr.appendChild(tdAct);
+          tbl.appendChild(tr);
+        }
+      });
+    }
+
+    function deleteUser(d, name) {
+      if (!confirm('"' + name + '" 유저를 삭제할까요? 되돌릴 수 없어요.')) return;
+      fetch(SERVER + '/admin/users/' + d, { method: 'DELETE' }).then(function(r) {
+        return r.json();
+      }).then(function(result) {
+        showMsg(result.message, !result.success);
+        if (result.success) loadUsers();
+      });
+    }
+
+    function promoteUser(d) {
+      if (!confirm('이 유저를 관리자로 승격할까요?')) return;
+      fetch(SERVER + '/admin/users/' + d + '/promote', { method: 'POST' }).then(function(r) {
+        return r.json();
+      }).then(function(result) {
+        showMsg(result.message, !result.success);
+        if (result.success) loadUsers();
+      });
+    }
+
+    function demoteUser(d) {
+      if (!confirm('이 관리자를 일반 유저로 변경할까요?')) return;
+      fetch(SERVER + '/admin/users/' + d + '/demote', { method: 'POST' }).then(function(r) {
+        return r.json();
+      }).then(function(result) {
+        showMsg(result.message, !result.success);
+        if (result.success) loadUsers();
+      });
+    }
+
+    // ── 모임 ──
+
+    function resetActivitySearch() {
+      document.getElementById('activity-keyword').value = '';
+      loadActivities();
+    }
+
+    function loadActivities() {
+      var word = document.getElementById('activity-keyword').value;
+      var url = SERVER + '/admin/activities';
+      if (word) url = url + '?keyword=' + word;
+
+      fetch(url).then(function(r) {
+        return r.json();
+      }).then(function(result) {
+        var tbl = document.getElementById('activity-tbody');
+        tbl.innerHTML = '';
+
+        if (!result.success) { showMsg('모임 목록을 불러오지 못했어요', true); return; }
+        if (result.data.length === 0) {
+          tbl.innerHTML = '<tr><td colspan="6">결과 없음</td></tr>';
+          return;
+        }
+
+        activityList = result.data;
+
+        for (var i = 0; i < result.data.length; i++) {
+          var item = result.data[i];
+
+          var tr      = document.createElement('tr');
+          var tdTitle  = document.createElement('td');
+          var tdCat    = document.createElement('td');
+          var tdLoc    = document.createElement('td');
+          var tdDate   = document.createElement('td');
+          var tdPeople = document.createElement('td');
+          var tdAct    = document.createElement('td');
+
+          tdTitle.textContent  = item.title;
+          tdCat.textContent    = item.category;
+          tdLoc.textContent    = item.location;
+          tdDate.textContent   = item.date + ' ' + item.time;
+          tdPeople.textContent = item.participants + ' / ' + item.maxParticipants;
+
+          var editBtn = document.createElement('button');
+          editBtn.textContent = '수정';
+          editBtn.setAttribute('onclick', 'openEdit(' + i + ')');
+          tdAct.appendChild(editBtn);
+
+          var delBtn = document.createElement('button');
+          delBtn.textContent = '삭제';
+          delBtn.setAttribute('onclick', 'deleteActivity("' + item._id + '")');
+          tdAct.appendChild(delBtn);
+
+          tr.appendChild(tdTitle);
+          tr.appendChild(tdCat);
+          tr.appendChild(tdLoc);
+          tr.appendChild(tdDate);
+          tr.appendChild(tdPeople);
+          tr.appendChild(tdAct);
+          tbl.appendChild(tr);
+        }
+      });
+    }
+
+    function deleteActivity(d) {
+      if (!confirm('이 모임을 삭제할까요? 되돌릴 수 없어요.')) return;
+      fetch(SERVER + '/admin/activities/' + d, { method: 'DELETE' })
+      .then(function(r) {
+        return r.json();
+      }).then(function(result) {
+        showMsg(result.message, !result.success);
+        if (result.success) loadActivities();
+      });
+    }
+
+    function openEdit(i) {
+      var item = activityList[i];
+      document.getElementById('edit-id').value = item._id;
+      document.getElementById('edit-title').value = item.title;
+      document.getElementById('edit-category').value = item.category;
+      document.getElementById('edit-description').value = item.description;
+      document.getElementById('edit-location').value = item.location;
+      document.getElementById('edit-address').value = item.address;
+      document.getElementById('edit-date').value = item.date;
+      document.getElementById('edit-time').value = item.time;
+      document.getElementById('edit-duration').value = item.duration;
+      document.getElementById('edit-maxParticipants').value = item.maxParticipants;
+      document.getElementById('edit-modal').style.display = '';
+    }
+
+    function closeModal() {
+      document.getElementById('edit-modal').style.display = 'none';
+    }
+
+    function saveActivity() {
+      var aid = document.getElementById('edit-id').value;
+      var form = {
+        title: document.getElementById('edit-title').value,
+        category: document.getElementById('edit-category').value,
+        description: document.getElementById('edit-description').value,
+        location: document.getElementById('edit-location').value,
+        address: document.getElementById('edit-address').value,
+        date: document.getElementById('edit-date').value,
+        time: document.getElementById('edit-time').value,
+        duration: document.getElementById('edit-duration').value,
+        maxParticipants: document.getElementById('edit-maxParticipants').value
+      };
+
+      fetch(SERVER + '/admin/activities/' + aid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      }).then(function(r) {
+        return r.json();
+      }).then(function(result) {
+        showMsg(result.message, !result.success);
+        if (result.success) { closeModal(); loadActivities(); }
+      });
+    }
+
+    loadUsers();
+  </script>
+
+  
+</body>
+</html>

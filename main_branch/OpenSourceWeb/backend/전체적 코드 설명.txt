@@ -1,0 +1,189 @@
+
+코드 기반은 bayarjavhklan1가 올려 놓은 코드 기반이다. 
+
+
+1. 아이디,비번, 개인정보 입력 -> db에 저장
+ㄴ 권한 같은 것 설정 관련해서는 보이는 페이지 새로 생성 -> root한테만 보이는 debugging page => 여기서 권한 주는 방식 차용(username 검색으로 주는 버튼 생성) 
+
+2. 모임 생성 => db 저장 => 조회,삭제,검색 구현 
+ㄴ 등급에 따라 보이는거 제외 하기 ex) 회원가입 안하면 프로필 X, 만드는거 못함 ,join 못함 
+
+User.js 
+스키마 구성: 이름,이메일,비밀번호,역할(이건 user,admin 구분), 자동 날,
+이메일,이름은 unique 해야하기 때문에 boolean으로 구분 
+
+
+
+
+auth.js: 
+보안을 위해 Post 방식으로 보냄 -> localhost:3000/register로 요청이 들어오면 아래 코드 실행 -> 웹 페이지에서 입력받은 name,email,password,adminCode(이건 관리자 계정 유무 판단) 받음
+예외 처리 : 필수 항목 유무에 대한 처리 
+
+비밀번호 암호화(bcrypt) -> DB에 저장 -> save
+  return res.json({
+    success: true,
+    message: '회원가입 성공!',
+    user: {
+      name:  newUser.name,
+      email: newUser.email,
+      role:  newUser.role -> 이 형식은 enum: ['user', 'admin'] 집합 형식을 통해 구성했다.
+    } -> 이런식으로 결과 값 리턴 , 아이디도 형식 같음 
+
+
+
+최적화를 위한 비동기 처리 : 
+수업 시간에 배운 싱글 스레드를 찾아보는 도중에 싱글 스레드면 작업 단위가 1개인데 어떤식으로 빠르게 처리한다는 거지라는 생각이 들어서 찾아보았다. 
+Node.js + 어떤 라이브러리(livu?)을 활용해서 코드를 돌림 
+Event Loop: 
+ Call Stack
+ Background / Thread Pool로 할 일 또스 
+ㄴ 배경에 있는 OS나 C++ 스레드 풀이 대신 수행합니다.
+작업 완료 알림 (Task Queue)
+메인 스레드가 승인 
+요약하자면 싱글 스레드는 맞지만 여러 작업들은 os나 C++ 스레드 풀이 대신 수행 하고 승인만 메인 스레드가 진행한다
+ㄴ Q. 승인 속도 < 처리 속도가 된다면 queue에 병목이 생기지 않나? 
+-> 그래서 비동기화와 await을 통하여 순서를 조정하므로서 완화한다. 
+async(업무 방식을 비동기적으로 바꿈) 와 await(오래걸리는 작업은 이걸로 승인 순서 바꿈) -> 이거 어디다가 await을 붙여야할지는 잘 모르겠다. 자동으로 되는건지 아니면 그냥 
+
+
+
+seed.js 
+기존 frontend에 있던 데이터를 moogooDB에 넘기는 작업으로 
+countDocument() -> insertMany() -> disconnect로 진행한다. 
+
+
+
+models/Activity.js 
+frontend를 참고하여 여러 요소드에 대해 스키마 정의표를 참고하여서 
+json 형태로 정의했다. 
+const Activity = mongoose.model('Activity', activitySchema);
+export default Activity; 을 통하여 
+모델 정의 후 내보내는 과정을 통해 외부에서 import 할 수 있도록 정의했다. 
+
+
+routes/activity.js
+전체적인 모임 관련 필터링 과정을 routes하는 페이지로 
+모임 전체 목록,특정 모임 상제 정보, 새로운 모임 등록 
+ㄴ 이게 Mongoose에 있는 models를 사용하다 보니까 특히 DB 조회나 저장 작업에서 빈 데이터 출력 오류가 생김 
+ㄴ 즉 데이터베이스 작업 완료 -> 조회,검색 순서를 맞춰야함 -> 위에서 배운 비동기적와 await을 활용하여 순서를 맞춰야함 
+
+
+routes/admin.js 
+
+GET /users : 전체 명단 받음 -> 이름 이메일 입력하면 알 수 있게 만듬 
+DELETE /users/:id : 특징 친구 내보내고 모임에서 아예 지워버리는 경우 
+POST /users/:id/promote : 권한 승격 
+POST /users/:id/demote : 권한 뺏기 
+검색이 너무 불친절함 -> 단어가 글자가 모두 다 똑같아야 데이터를 찾을 수 있다는 방식으로 동작함 
+ㄴ 그래서 찾아 보니 $regex를 활용을 하면 일부분만 입력해도 찾기 가능 
+ㄴ 대소문자 같은건 하드 코딩으로 코드를 짜는게 귀찮아서 찾아보니 $options : ignore를 활용해서 검색의 편의를 늘렸다. 
+Moogoo DB의 라이브러리 findByIdAndDelete을 활용해서 직관적으로 값을 지우는 방향으로 감 
+
+
+admin.html 
+기본적인 html 문법으로 만들었다. class가 아닌 개별 id를 지정해서 값을 가져오는 방식을 선택했다. 
+검색,초기화,저장,취소 버튼을 먼저 구현할 예정이다. 
+
+반복되면서 사용될 것 function으로 처리 : 
+showmsg() : id : msg 칸에 특정 이벤트 발생시 오류or통과 표시 해주는 알람 
+문제점 : 이게 뜨고 안사라지는 상황 발생 
+ㄴ setTimeout(function() { box.textContent = ''; }, 3000);으로 3초만에 사라지게 만듬 
+
+ShowTab(): 탭이 admin만 보이게 하기 위해서 T/F로 구분 
+삼항 연산자를 사용해서 User 유뮤에 따라서 display : none or ""으로 구분함 
+
+resetUserSearch() : 검색을 하고 값이 남아 있어서 항상 reset 되게 만듬 
+ㄴ 항상 뒤에는 전제 유저 다시 불러오게 적용 
+
+
+loadUsers() : 
+1. 검색어 준비 -> html의  검색 부분에서 value 가져옴 
+형식 자체가 SERVER/admin/users?keyword가 되어야하기 때문에 word가 들어오면 그게 붙도록 조건문 붙임 
+2. 서버에게 유저 목록 요청 (url, res.json) -> Mongoo DB라서 document로 리턴 되기 때문에 다른 전환 필요 없음 
+3. 기존에 있던 목록 다 지우기 
+ㄴ 이 과정이 구현할 때 빠져서 겹치는 현상 발생 
+4. 오류 관련 -> 목록 불러오기, 데이터 결과 X 
+5. 유저마다 표 한줄씩 만들기 
+ㄴ 시험에서 했던 표 생성 
+6. 거기에 관리자,일반 유저 관련 버튼 만들기 
+-> 다 표에 붙이기 
+
+
+deleteUser() : 
+삭제 전 팝업을 통하여 한 번 더 물어보기
+ㄴ 미연의 방지 추가 안할수도?
+
+서버에게 user 지워달라고 하기  fetch(SERVER + '/admin/users/' + d, { method: 'DELETE' })
+ㄴ 아까 만들어둔 showMsg로 확인하기 -> 되면 새로고침(loadUsers)
+
+promoteUser(),demoteUser() : 
+위의 것과 template은 동일하지만 method : POST로 변경 
+
+loadActivities(): 
+값을 활동을 할 때 마다 reset을 통해 갱신을 해줘야하기 때문에 처음에 받고 리셋 시켜야함
+1. 검색창 확인 -> 주소 만들기(찾아갈 주소) -> fetch로 글고 온다음에 json으로 뜯기
+2. tb1 초기화 -> for 반복문으로 첫 순서 모임(title, category,description,location,address,data,time,duration,maxParticipants)
+ㄴ 수정 버튼과 삭제 버튼 달아주고 tb1에 추가하기 
+
+
+deleteActivity() 
+삭제 메시지 하나 더 표시 한 후에 삭제 method 보내기 
+
+openEdit(i) : 
+수정 페이지에 기존 값이 안들어가있는 것을 확인해서 어떤 걸 바꿔야할지 잘 모르는 상황이 발생함 
+ㄴ 처음에 값을 다 가져오는 형식의 함수를 적용하므로서 무엇이 수정되었는지 확인 가능하다. 
+
+closeModal() : 
+display : none으로 바꿔주는 함수 
+
+
+saveActivity() : aid로 수정한 값 다 가져오기 -> PUT으로 업데이트 
+ㄴ then chaining 필수임
+
+
+
+AuthPage.tsx에서 
+로그인/회원가입 두 가지 모드를 하나의 페이지에서 처리함
+isLogin state로 true면 로그인 폼, false면 회원가입 폼 보여줌
+
+state 구성 : 이름, 이메일, 비밀번호, 에러메시지, 비밀번호 표시여부, 로그인/회원가입 모드 구분
+
+handleSubmit() :
+isLogin 여부에 따라 분기
+로그인이면 → POST /auth/login 으로 email, password 보냄
+회원가입이면 → POST /auth/register 로 name, email, password 보냄
+서버 응답에서 success가 false면 errMsg state에 메시지 저장 → 버튼 위에 빨간 글씨로 표시
+성공하면 /feed 로 이동
+에러 처리 :
+
+이미 있는 이메일로 가입하면 "이미 사용 중인 이메일이에요" 메시지 출력
+비밀번호 틀리면 "비밀번호 틀렸어요" 출력
+없는 이메일로 로그인 시도하면 "없는 이메일이에요" 출력
+auth.js (백엔드)
+POST /auth/register : 회원가입
+
+프론트에서 name, email, password, adminCode 받음
+필수 항목 빠지면 바로 실패 응답 리턴
+이미 있는 이메일이면 중복 응답 리턴
+bcrypt로 비밀번호 암호화 후 DB 저장
+adminCode가 'ADMIN1234' 이면 role : admin, 아니면 role : user 로 저장
+저장 완료되면 success: true + 유저 정보 리턴
+POST /auth/login : 로그인
+
+프론트에서 email, password 받음
+이메일로 DB에서 유저 찾기 → 없으면 실패 응답
+bcrypt.compare로 암호화된 비밀번호랑 입력값 비교 → 틀리면 실패 응답
+통과되면 success: true + id, name, email, role 리턴
+ㄴ role 값을 프론트에서 받아두면 나중에 관리자/일반 페이지 분기할 때 활용 가능
+error msg는 console.log으로 바꿈 
+
+
+채팅 page: 
+요약: 
+방 입장 -> 전체 메시지 불러오기 -> 5초마다 새 메시지 있나 확인 (폴링) 
+메세지 전송 -> 서버에 저장 -> 바로 새 메시지 불러오기 
+화면 표시 -> 내 메시지 : 오른쪽 파란색, 상대 메시지 : 왼쪽 흰 말풍선 
+화면 <-> 서버 <-> MongoDB(창고) 
+Chat.js : DB 설계 부분(room 번호, 사람, 내용, 시간)
+
+React -> Mapin,clock
